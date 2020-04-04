@@ -1,0 +1,115 @@
+---
+title: "Practical Machine Learning Final Project"
+author: "Mariah Birgen"
+output: html_notebook
+---
+```{r setup, include=FALSE}
+require(dplyr); require(ggplot2); require(caret); require(knitr)
+require(RANN)
+```
+# Executive Summary
+After downloading and cleaning the data to select only acceleration predictors, two different models, random trees and generalized boosted regression, were run on 60% of the training set. The models were then run on the remaining of the 40% testing set to test for accuracy. The model with the best performance, random trees, was then chosen to run on the given testing set. The results are given below.
+
+# Introduction
+Six participants were asked to perform barbell lifts correctly and incorrectly in 5 different ways. The goal of the project is to use data from accelerometers on the belt, forearm, arm, and dumbell to predict whether or not the barbell lift was perfomed correctly. The report describes the building of the model including dealing with missing data and deciding which model method to use.
+
+# Data Preparation
+Data is downloaded from the given urls.
+```{r downloads, echo=FALSE, cache=TRUE}
+url1 <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+url2 <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+download.file(url1, "trainingdata.csv")
+download.file(url2, "testingdata.csv")
+```
+Then, data is saved into r for processing.
+```{r save files}
+training <- read.csv("trainingdata.csv", stringsAsFactors = FALSE)
+testing <- read.csv("testingdata.csv", stringsAsFactors = FALSE)
+```
+
+# Data Cleaning
+The dataset is very large, so we are able to break the data into two pieces, one to train the models and the other to test the models for accuracy.
+```{r}
+set.seed(23846)
+inTrain <- createDataPartition(y = training$classe, p=0.6, list = FALSE )
+trainset <- training[inTrain,]
+testset <- training[-inTrain,]
+```
+Select only predictors that indicate acceleration. After working with the first selection, it becomes clear that predictors that measure the variance of the acceleration need to be excluded.
+```{r}
+trainy <- trainset[,160]
+trainuser<- trainset[,2]
+trainset <- trainset[, grepl("accel", names (trainset))]
+trainset <- trainset[, !grepl("var", names(trainset))]
+trainset <- cbind(classe=trainy, trainset)
+dim(trainset)
+```
+This leaves us with 16 predictors.
+```{r}
+names(trainset)
+```
+
+## Remove predictors with minimal variance or missing values
+Remove predictors with minimal variance (this turns out to have little effect).
+```{r nearzero}
+nsv <- nearZeroVar(trainset, saveMetrics = TRUE)
+trainset <- trainset[, nsv$nzv==FALSE]
+dim(trainset)
+```
+
+Remove predictors with missing values (this turns out to have little effect).
+```{r}
+trainset<- trainset[, colSums(is.na(trainset)) == 0]
+dim(trainset)
+```
+
+
+# Model Building
+## Random Forest
+### Training
+```{r build random forest, cache=TRUE}
+controlRF <- trainControl(method="cv", number=3, verboseIter=FALSE)
+model1 <- train(classe~., data = trainset, method = "rf", trControl=controlRF)
+model1$finalModel
+```
+### Validation
+We then validate the model obtained model $model1$ on the test data to find out how well it performs by looking at the Accuracy variable.
+```{r}
+predrf <- predict(model1, newdata = testset)
+cmrf <- confusionMatrix(predrf, factor(testset$classe))
+cmrf$overall
+```
+We see the accuracy of the "rt" model is 94%.
+## Generalized Boosted Regression
+### Training
+```{r build gbr, cache = TRUE}
+set.seed(23846)
+controlGBM <- trainControl(method = "repeatedcv", number = 5, repeats = 1)
+model2 <- train(classe ~ ., data=trainset, method = "gbm", trControl = controlGBM, verbose = FALSE)
+model2$finalModel
+```
+```{r}
+# print model summary
+print(model2)
+```
+
+### Validation
+We then validate the model obtained model $model1$ on the test data to find out how well it performs by looking at the Accuracy variable.
+```{r}
+predgbm <- predict(model2, newdata = testset)
+table(predgbm, testset$classe)
+cmgbm <- confusionMatrix(predgbm, factor(testset$classe))
+cmgbm$overall
+```
+We see that the accuracy of the "gbm" model on the testset is 82%.
+# Running Best Model on Testing data
+Because the random trees model had significantly better accuracy on the testset data, we will use it to predict our answers for the quiz.
+```{r}
+Results <- predict(model1, newdata = testing)
+Results
+```
+
+# Bibliography
+Data comes from :
+
+Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
